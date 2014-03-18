@@ -1,7 +1,7 @@
 package dashing
 
 type Job interface {
-    Work(send chan *Message)
+    Work(send chan *Event)
 }
 
 var registry = []Job{}

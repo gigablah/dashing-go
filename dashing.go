@@ -3,7 +3,9 @@ package dashing
 import (
     "log"
     "fmt"
+    "time"
     "net/http"
+    "encoding/json"
     "github.com/codegangsta/martini"
     "github.com/codegangsta/martini-contrib/encoder"
 )
@@ -11,7 +13,7 @@ import (
 // The Martini instance
 var m *martini.Martini
 
-// Message broker
+// Event broker
 var b *Broker
 
 func init() {
@@ -28,12 +30,27 @@ func init() {
         w.Header().Set("Content-Type", "application/json; charset=utf-8")
     })
 
-    // Setup and inject message broker
+    // Setup and inject event broker
     b = NewBroker()
     m.Map(b)
 
     // Setup routes
     r := martini.NewRouter()
+
+    r.Post("/widgets/:id", func(r *http.Request, params martini.Params, b *Broker) (int, string) {
+        if r.Body != nil {
+            defer r.Body.Close()
+        }
+
+        var data map[string]interface{}
+
+        if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+            return 400, ""
+        }
+
+        b.events <- &Event{params["id"], data, ""}
+        return 204, ""
+    })
 
     r.Get("/events", func(w http.ResponseWriter, r *http.Request, e encoder.Encoder, b *Broker) {
 
@@ -50,17 +67,17 @@ func init() {
         }
 
         // Create a new channel, over which the broker can
-        // send this client messages.
-        messageChan := make(chan *Message)
+        // send this client events.
+        events := make(chan *Event)
 
         // Add this client to the map of those that should
         // receive updates
-        b.newClients <- messageChan
+        b.newClients <- events
 
         // Remove this client from the map of attached clients
         // when the handler exits.
         defer func() {
-            b.defunctClients <- messageChan
+            b.defunctClients <- events
         }()
 
         w.Header().Set("Content-Type", "text/event-stream")
@@ -72,8 +89,14 @@ func init() {
 
         for {
             select {
-            case msg := <-messageChan:
-                fmt.Fprintf(w, "data: %s\n\n", encoder.Must(e.Encode(msg.Data)))
+            case event := <-events:
+                data := event.Body
+                data["id"] = event.Id
+                data["updatedAt"] = int32(time.Now().Unix())
+                if event.Target != "" {
+                    fmt.Fprintf(w, "event: %s\n", event.Target)
+                }
+                fmt.Fprintf(w, "data: %s\n\n", encoder.Must(e.Encode(data)))
                 f.Flush()
             case <-closer:
                 log.Println("Closing connection")
@@ -88,12 +111,12 @@ func init() {
 }
 
 func Start() {
-    // Start the message broker
+    // Start the event broker
     b.Start()
 
     // Start the jobs
     for _, j := range registry {
-        go j.Work(b.messages)
+        go j.Work(b.events)
     }
 
     // Start Martini

@@ -7,7 +7,8 @@ Still under heavy construction!
 
 ### Current Status
 
-* Right now the `/events` endpoint (which emits Server-Sent Events) is done. Registered jobs can now transmit data to widget identifiers.
+* The `/widget/:id` endpoint is done. You can now post JSON data to individual widgets.
+* The `/events` endpoint (which emits Server-Sent Events) is done. Registered jobs can now transmit data to widget identifiers.
 * For an example of how to write jobs in dashing-go, please refer to the [demo dashboard][4].
 
 Credits
