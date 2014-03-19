@@ -1,15 +1,14 @@
 package dashing
 
-import (
-    _ "log"
-)
-
+// An Event contains the widget ID, a body of data,
+// and an optional target (only "dashboard" for now).
 type Event struct {
-    Id string
+    ID string
     Body map[string]interface{}
     Target string
 }
 
+// A Broker broadcasts events to multiple clients.
 type Broker struct {
     // Create a map of clients, the keys of the map are the channels
     // over which we can push messages to attached clients. (The values
@@ -27,9 +26,9 @@ type Broker struct {
     events chan *Event
 }
 
+// Start managing client connections and event broadcasts.
 func (b *Broker) Start() {
     go func() {
-        // Loop endlessly
         for {
             // Block until we receive from one of the
             // three following channels.
@@ -48,7 +47,7 @@ func (b *Broker) Start() {
                 // There is a new event to send. For each
                 // attached client, push the new event
                 // into the client's channel.
-                for s, _ := range b.clients {
+                for s := range b.clients {
                     s <- event
                 }
                 // log.Printf("Broadcast event to %d clients", len(b.clients))
@@ -57,6 +56,7 @@ func (b *Broker) Start() {
     }()
 }
 
+// NewBroker creates a Broker instance.
 func NewBroker() *Broker {
     return &Broker{
         make(map[chan *Event]bool),

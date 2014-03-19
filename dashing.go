@@ -6,14 +6,15 @@ import (
     "time"
     "net/http"
     "encoding/json"
+
     "github.com/codegangsta/martini"
     "github.com/codegangsta/martini-contrib/encoder"
 )
 
-// The Martini instance
+// The Martini instance.
 var m *martini.Martini
 
-// Event broker
+// The Event broker.
 var b *Broker
 
 func init() {
@@ -91,7 +92,7 @@ func init() {
             select {
             case event := <-events:
                 data := event.Body
-                data["id"] = event.Id
+                data["id"] = event.ID
                 data["updatedAt"] = int32(time.Now().Unix())
                 if event.Target != "" {
                     fmt.Fprintf(w, "event: %s\n", event.Target)
@@ -110,6 +111,7 @@ func init() {
     m.Action(r.Handle)
 }
 
+// Start all jobs and listen to requests.
 func Start() {
     // Start the event broker
     b.Start()
