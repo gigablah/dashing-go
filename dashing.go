@@ -1,14 +1,17 @@
 package dashing
 
 import (
+    "os"
     "log"
     "fmt"
     "time"
     "net/http"
     "encoding/json"
+    "path/filepath"
 
     "github.com/codegangsta/martini"
     "github.com/codegangsta/martini-contrib/encoder"
+    "github.com/karlseguin/gerb"
 )
 
 // The Martini instance.
@@ -38,23 +41,22 @@ func init() {
     // Setup routes
     r := martini.NewRouter()
 
-    r.Post("/widgets/:id", func(r *http.Request, params martini.Params, b *Broker) (int, string) {
-        if r.Body != nil {
-            defer r.Body.Close()
+    r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+        files, _ := filepath.Glob("dashboards/*.gerb")
+
+        for _, file := range files {
+            dashboard := file[11:len(file)-5]
+            if dashboard != "layout" {
+                http.Redirect(w, r, "/" + dashboard, http.StatusTemporaryRedirect)
+                return
+            }
         }
 
-        var data map[string]interface{}
-
-        if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-            return 400, ""
-        }
-
-        b.events <- &Event{params["id"], data, ""}
-        return 204, ""
+        http.NotFound(w, r)
+        return
     })
 
     r.Get("/events", func(w http.ResponseWriter, r *http.Request, e encoder.Encoder, b *Broker) {
-
         f, ok := w.(http.Flusher)
         if !ok {
             http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
@@ -85,7 +87,6 @@ func init() {
         w.Header().Set("Cache-Control", "no-cache")
         w.Header().Set("Connection", "keep-alive")
         w.Header().Set("X-Accel-Buffering", "no")
-        w.Header().Set("Access-Control-Allow-Origin", "*")
         closer := c.CloseNotify()
 
         for {
@@ -104,7 +105,68 @@ func init() {
                 return
             }
         }
+    })
 
+    r.Get("/:dashboard", func(r *http.Request, w http.ResponseWriter, params martini.Params) {
+        template, err := gerb.ParseFile(true, "dashboards/" + params["dashboard"] + ".gerb", "dashboards/layout.gerb")
+
+        if err != nil {
+            http.NotFound(w, r)
+            return
+        }
+
+        w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+
+        template.Render(w, map[string]interface{}{
+            "dashboard": params["dashboard"],
+            "development": os.Getenv("DEV") != "",
+            "request": r,
+        })
+        return
+    })
+
+    r.Post("/dashboards/:id", func(r *http.Request, params martini.Params, b *Broker) (int, string) {
+        if r.Body != nil {
+            defer r.Body.Close()
+        }
+
+        var data map[string]interface{}
+
+        if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+            return 400, ""
+        }
+
+        b.events <- &Event{params["id"], data, "dashboards"}
+        return 204, ""
+    })
+
+    r.Post("/widgets/:id", func(r *http.Request, params martini.Params, b *Broker) (int, string) {
+        if r.Body != nil {
+            defer r.Body.Close()
+        }
+
+        var data map[string]interface{}
+
+        if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+            return 400, ""
+        }
+
+        b.events <- &Event{params["id"], data, ""}
+        return 204, ""
+    })
+
+    r.Get("/views/:widget.html", func(w http.ResponseWriter, r *http.Request, params martini.Params) {
+        template, err := gerb.ParseFile(true, "widgets/" + params["widget"] + "/" + params["widget"] + ".html")
+
+        if err != nil {
+            http.NotFound(w, r)
+            return
+        }
+
+        w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+
+        template.Render(w, nil)
+        return
     })
 
     // Add the router action
