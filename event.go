@@ -8,6 +8,10 @@ type Event struct {
 	Target string
 }
 
+// An eventCache stores the latest event for each key, so that new clients can
+// catch up.
+type eventCache map[string]*Event
+
 // A Broker broadcasts events to multiple clients.
 type Broker struct {
 	// Create a map of clients, the keys of the map are the channels
@@ -24,6 +28,9 @@ type Broker struct {
 	// Channel into which events are pushed to be broadcast out
 	// to attached clients
 	events chan *Event
+
+	// Cache for most recent events with a certain ID
+	cache eventCache
 }
 
 // Start managing client connections and event broadcasts.
@@ -37,6 +44,11 @@ func (b *Broker) Start() {
 				// There is a new client attached and we
 				// want to start sending them events.
 				b.clients[s] = true
+				// Send all the cached events so that when a new client connects, it
+				// doesn't miss previous events
+				for _, e := range b.cache {
+					s <- e
+				}
 				// log.Println("Added new client")
 			case s := <-b.defunctClients:
 				// A client has detached and we want to
@@ -44,6 +56,7 @@ func (b *Broker) Start() {
 				delete(b.clients, s)
 				// log.Println("Removed client")
 			case event := <-b.events:
+				b.cache[event.ID] = event
 				// There is a new event to send. For each
 				// attached client, push the new event
 				// into the client's channel.
@@ -63,5 +76,6 @@ func NewBroker() *Broker {
 		make(chan (chan *Event)),
 		make(chan (chan *Event)),
 		make(chan *Event),
+		map[string]*Event{},
 	}
 }
