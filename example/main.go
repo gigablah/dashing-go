@@ -11,7 +11,6 @@ import (
 
 	"gopkg.in/gigablah/dashing-go.v1"
 	_ "gopkg.in/gigablah/dashing-go.v1/example/jobs"
-	"gopkg.in/justinas/alice.v0"
 )
 
 func tokenAuthMiddleware(h http.Handler) http.Handler {
@@ -52,6 +51,6 @@ func main() {
 		panic("TOKEN env variable is required")
 	}
 
-	handlerChain := alice.New(tokenAuthMiddleware).Then(dashing.NewDashing().Start())
-	log.Fatal(http.ListenAndServe(":"+port, handlerChain))
+	dash := dashing.NewDashing().Start()
+	log.Fatal(http.ListenAndServe(":"+port, tokenAuthMiddleware(dash)))
 }
