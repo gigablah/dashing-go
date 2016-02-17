@@ -1,11 +1,56 @@
 package main
 
 import (
-  "gopkg.in/gigablah/dashing-go.v1"
-	_  "gopkg.in/gigablah/dashing-go.v1/example/jobs"
+	"bytes"
+	"crypto/subtle"
+	"encoding/json"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+
+	"gopkg.in/gigablah/dashing-go.v1"
+	_ "gopkg.in/gigablah/dashing-go.v1/example/jobs"
+	"gopkg.in/justinas/alice.v0"
 )
 
+func tokenAuthMiddleware(h http.Handler) http.Handler {
+	auth := []byte(os.Getenv("TOKEN"))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			body, _ := ioutil.ReadAll(r.Body)
+			r.Body = ioutil.NopCloser(bytes.NewReader(body))
+
+			var data map[string]interface{}
+			json.Unmarshal(body, &data)
+			token, ok := data["auth_token"]
+			if !ok {
+				log.Printf("Auth token missing")
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			}
+
+			if result := subtle.ConstantTimeCompare(auth, []byte(token.(string))); result != 1 {
+				log.Printf("Invalid auth token: expected %s, got %s", auth, token)
+				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+				return
+			}
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
 func main() {
-	d := dashing.NewDashing()
-	d.Start()
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	if os.Getenv("TOKEN") == "" {
+		panic("TOKEN env variable is required")
+	}
+
+	handlerChain := alice.New(tokenAuthMiddleware).Then(dashing.NewDashing().Start())
+	log.Fatal(http.ListenAndServe(":"+port, handlerChain))
 }

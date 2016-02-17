@@ -12,22 +12,25 @@ import (
 	"gopkg.in/karlseguin/gerb.v0"
 )
 
-// A Server contains webservice parameters and handlers.
+// A Server contains webservice parameters and middlewares.
 type Server struct {
-	dev    bool
-	port   int
-	broker *Broker
-	Router http.Handler
+	dev     bool
+	webroot string
+	broker  *Broker
+}
+
+func param(r *http.Request, name string) string {
+	return r.FormValue(fmt.Sprintf(":%s", name))
 }
 
 // IndexHandler redirects to the default dashboard.
-func (h *Server) IndexHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	files, _ := filepath.Glob("dashboards/*.gerb")
 
 	for _, file := range files {
 		dashboard := file[11 : len(file)-5]
 		if dashboard != "layout" {
-			http.Redirect(w, r, "/"+dashboard, http.StatusTemporaryRedirect)
+			http.Redirect(w, r, fmt.Sprintf("/%s", dashboard), http.StatusTemporaryRedirect)
 			return
 		}
 	}
@@ -36,7 +39,7 @@ func (h *Server) IndexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // EventsHandler opens a keepalive connection and pushes events to the client.
-func (h *Server) EventsHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) EventsHandler(w http.ResponseWriter, r *http.Request) {
 	f, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
@@ -55,12 +58,12 @@ func (h *Server) EventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Add this client to the map of those that should
 	// receive updates
-	h.broker.newClients <- events
+	s.broker.newClients <- events
 
 	// Remove this client from the map of attached clients
 	// when the handler exits.
 	defer func() {
-		h.broker.defunctClients <- events
+		s.broker.defunctClients <- events
 	}()
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -92,8 +95,12 @@ func (h *Server) EventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // DashboardHandler serves the dashboard layout template.
-func (h *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
-	template, err := gerb.ParseFile(true, "dashboards/"+vestigo.Param(r, "dashboard")+".gerb", "dashboards/layout.gerb")
+func (s *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
+	dashboard := param(r, "dashboard")
+	if dashboard == "" {
+		dashboard = fmt.Sprintf("events%s", param(r, "suffix"))
+	}
+	template, err := gerb.ParseFile(true, fmt.Sprintf("dashboards/%s.gerb", dashboard), "dashboards/layout.gerb")
 
 	if err != nil {
 		http.NotFound(w, r)
@@ -103,14 +110,14 @@ func (h *Server) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 
 	template.Render(w, map[string]interface{}{
-		"dashboard":   vestigo.Param(r, "dashboard"),
-		"development": h.dev,
+		"dashboard":   dashboard,
+		"development": s.dev,
 		"request":     r,
 	})
 }
 
 // DashboardEventHandler accepts dashboard events.
-func (h *Server) DashboardEventHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) DashboardEventHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		defer r.Body.Close()
 	}
@@ -122,16 +129,19 @@ func (h *Server) DashboardEventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.broker.events <- &Event{vestigo.Param(r, "id"), data, "dashboards"}
+	s.broker.events <- &Event{param(r, "id"), data, "dashboards"}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // WidgetHandler serves widget templates.
-func (h *Server) WidgetHandler(w http.ResponseWriter, r *http.Request) {
-	template, err := gerb.ParseFile(true, "widgets/"+vestigo.Param(r, "widget")+"/"+vestigo.Param(r, "widget")+".html")
+func (s *Server) WidgetHandler(w http.ResponseWriter, r *http.Request) {
+	widget := param(r, "widget")
+	widget = widget[0 : len(widget)-5]
+	template, err := gerb.ParseFile(true, fmt.Sprintf("widgets/%s/%s.html", widget, widget))
 
 	if err != nil {
+		log.Printf("%v", err)
 		http.NotFound(w, r)
 		return
 	}
@@ -142,7 +152,7 @@ func (h *Server) WidgetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // WidgetEventHandler accepts widget data.
-func (h *Server) WidgetEventHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) WidgetEventHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		defer r.Body.Close()
 	}
@@ -150,26 +160,34 @@ func (h *Server) WidgetEventHandler(w http.ResponseWriter, r *http.Request) {
 	var data map[string]interface{}
 
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		log.Printf("%v", err)
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 
-	h.broker.events <- &Event{vestigo.Param(r, "id"), data, ""}
+	s.broker.events <- &Event{param(r, "id"), data, ""}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Start listening to requests.
-func (h *Server) Start() {
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", h.port), h.Router))
+// NewRouter creates a router with defaults.
+func (s *Server) NewRouter() http.Handler {
+	r := vestigo.NewRouter()
+	r.Get("/", s.IndexHandler)
+	r.Get("/events", s.EventsHandler)
+	r.Get("/events:suffix", s.DashboardHandler) // workaround for router edge case
+	r.Get("/:dashboard", s.DashboardHandler)
+	r.Post("/dashboards/:id", s.DashboardEventHandler)
+	r.Get("/views/widgets/:widget", s.WidgetHandler)
+	r.Post("/widgets/:id", s.WidgetEventHandler)
+	return r
 }
 
 // NewServer creates a Server instance.
-func NewServer(p int, b *Broker, h http.Handler) *Server {
+func NewServer(b *Broker) *Server {
 	return &Server{
-		dev:    false,
-		port:   p,
-		broker: b,
-		Router: h,
+		dev:     false,
+		webroot: "",
+		broker:  b,
 	}
 }

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="description" content="" />
+  <meta name="viewport" content="width=device-width" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+
+  <title><%= yield("title") %></title>
+
+  <script type="text/javascript" src="//cdn.rawgit.com/gigablah/dashing-go-demo/4cbb1ccd2c5c05c6bff695796532b9780eade648/public/js/application.js"></script>
+  <link rel="stylesheet" href="//cdn.rawgit.com/gigablah/dashing-go-demo/4cbb1ccd2c5c05c6bff695796532b9780eade648/public/css/application.css" />
+
+  <link href='//fonts.googleapis.com/css?family=Open+Sans:300,400,600,700' rel='stylesheet' type='text/css' />
+
+</head>
+  <body>
+    <div id="container">
+      <%! yield %>
+    </div>
+
+    <% if development { %>
+      <div id="saving-instructions">
+        <p>Paste the following at the top of <i><%= dashboard %>.gerb</i></p>
+        <textarea id="gridster-code"></textarea>
+      </div>
+      <a href="#saving-instructions" id="save-gridster">Save this layout</a>
+    <% } %>
+  </body>
+</html>

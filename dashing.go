@@ -1,11 +1,9 @@
 package dashing
 
 import (
-	"log"
+	"net/http"
 	"os"
-	"strconv"
-
-	"gopkg.in/husobee/vestigo.v1"
+	"path/filepath"
 )
 
 // An Event contains the widget ID, a body of data,
@@ -16,72 +14,53 @@ type Event struct {
 	Target string
 }
 
-// A Job does periodic work and sends events to a channel.
-type Job interface {
-	Work(send chan *Event)
-}
-
-var reg []Job
-
-// A Dashing instance contains an event broker, a webservice
-// and a collection of registered jobs.
+// Dashing struct definition.
 type Dashing struct {
-	Broker   *Broker
-	Server   *Server
-	registry []Job
+	started bool
+	Broker  *Broker
+	Worker  *Worker
+	Server  *Server
+	Router  http.Handler
 }
 
-// Start all jobs and listen to requests.
-func (d *Dashing) Start() {
-	d.Broker.Start()
-
-	// Start the jobs
-	for _, j := range d.registry {
-		go j.Work(d.Broker.events)
+// ServeHTTP implements the HTTP Handler.
+func (d *Dashing) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !d.started {
+		panic("dashing.Start() has not been called")
 	}
-
-	// Start the webservice
-	d.Server.Start()
+	d.Router.ServeHTTP(w, r)
 }
 
-// NewDashing sets up the event broker, router and webservice.
-func NewDashing() *Dashing {
-	var port int
-	var err error
-	if os.Getenv("PORT") != "" {
-		port, err = strconv.Atoi(os.Getenv("PORT"))
-		if err != nil {
-			log.Fatalf("Invalid port: %s", os.Getenv("PORT"))
+// Start actives the broker and workers.
+func (d *Dashing) Start() *Dashing {
+	if !d.started {
+		if d.Router == nil {
+			d.Router = d.Server.NewRouter()
 		}
-	} else {
-		port = 8080
+		d.Broker.Start()
+		d.Worker.Start()
+		d.started = true
 	}
+	return d
+}
 
+// NewDashing sets up the event broker, workers and webservice.
+func NewDashing() *Dashing {
 	broker := NewBroker()
-	router := vestigo.NewRouter()
-	server := NewServer(port, broker, router)
+	worker := NewWorker(broker)
+	server := NewServer(broker)
+
+	if os.Getenv("WEBROOT") != "" {
+		server.webroot = filepath.Clean(os.Getenv("WEBROOT")) + "/"
+	}
 	if os.Getenv("DEV") != "" {
 		server.dev = true
 	}
 
-	router.Get("/", server.IndexHandler)
-	router.Get("/events", server.EventsHandler)
-	router.Get("/:dashboard", server.DashboardHandler)
-	router.Post("/dashboards/:id", server.DashboardEventHandler)
-	router.Get("/views/:widget.html", server.WidgetHandler)
-	router.Post("/widgets/:id", server.WidgetEventHandler)
-
 	return &Dashing{
-		Broker:   broker,
-		Server:   server,
-		registry: reg,
+		started: false,
+		Broker:  broker,
+		Worker:  worker,
+		Server:  server,
 	}
-}
-
-// Register a job to be kicked off upon starting the server.
-func Register(j Job) {
-	if j == nil {
-		panic("Can't register nil job")
-	}
-	reg = append(reg, j)
 }
