@@ -20,6 +20,7 @@ func tokenAuthMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			body, _ := ioutil.ReadAll(r.Body)
+			r.Body.Close()
 			r.Body = ioutil.NopCloser(bytes.NewReader(body))
 
 			var data map[string]interface{}
