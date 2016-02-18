@@ -8,8 +8,8 @@
 
   <title><%= yield("title") %></title>
 
-  <script type="text/javascript" src="//cdn.rawgit.com/gigablah/dashing-go-demo/4cbb1ccd2c5c05c6bff695796532b9780eade648/public/js/application.js"></script>
-  <link rel="stylesheet" href="//cdn.rawgit.com/gigablah/dashing-go-demo/4cbb1ccd2c5c05c6bff695796532b9780eade648/public/css/application.css" />
+  <script type="text/javascript" src="//cdn.rawgit.com/gigablah/dashing-go-demo/v1/public/js/application.js"></script>
+  <link rel="stylesheet" href="//cdn.rawgit.com/gigablah/dashing-go-demo/v1/public/css/application.css" />
 
   <link href='//fonts.googleapis.com/css?family=Open+Sans:300,400,600,700' rel='stylesheet' type='text/css' />
 

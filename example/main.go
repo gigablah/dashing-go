@@ -17,6 +17,10 @@ func tokenAuthMiddleware(h http.Handler) http.Handler {
 	auth := []byte(os.Getenv("TOKEN"))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    if len(auth) == 0 {
+      h.ServeHTTP(w, r)
+      return
+    }
 		if r.Method == "POST" {
 			body, _ := ioutil.ReadAll(r.Body)
 			r.Body.Close()
@@ -46,9 +50,6 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
-	}
-	if os.Getenv("TOKEN") == "" {
-		panic("TOKEN env variable is required")
 	}
 
 	dash := dashing.NewDashing().Start()

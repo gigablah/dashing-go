@@ -178,7 +178,7 @@ func (s *Server) NewRouter() http.Handler {
 	r.Get("/events:suffix", s.DashboardHandler) // workaround for router edge case
 	r.Get("/:dashboard", s.DashboardHandler)
 	r.Post("/dashboards/:id", s.DashboardEventHandler)
-	r.Get("/views/widgets/:widget", s.WidgetHandler)
+	r.Get("/views/:widget", s.WidgetHandler)
 	r.Post("/widgets/:id", s.WidgetEventHandler)
 	return r
 }
